@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.routes import documents, deidentify, contradictions, dashboard
+from app.routes import documents, deidentify, contradictions, dashboard, timeline
 
 app = FastAPI(
     title="MedGuard AI",
@@ -32,6 +32,7 @@ app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"]
 app.include_router(deidentify.router, prefix="/api/deidentify", tags=["De-Identification"])
 app.include_router(contradictions.router, prefix="/api/contradictions", tags=["Contradictions"])
 app.include_router(documents.router, prefix="/api/documents", tags=["Documents"])
+app.include_router(timeline.router, prefix="/api/timeline", tags=["Timeline"])
 
 @app.get("/")
 async def root():
