@@ -1,7 +1,8 @@
 import { useState, useCallback } from 'react'
 import axios from 'axios'
 import { useDropzone } from 'react-dropzone'
-import { Upload, AlertTriangle, CheckCircle, GitCompare, ChevronDown, ChevronUp, Zap, FileX } from 'lucide-react'
+import { Upload, AlertTriangle, CheckCircle, GitCompare, ChevronDown, ChevronUp, Zap, Lightbulb, ClipboardList } from 'lucide-react'
+import { useLang } from '../contexts/LanguageContext.jsx'
 
 const SEVERITY_ORDER = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 }
 
@@ -41,9 +42,53 @@ No history of kidney disease.
 Blood Pressure: 145/92 mmHg
 Heart Rate: 88 bpm`
 
+function DecisionSupportPanel({ ds }) {
+  if (!ds) return null
+  const urgencyColor = ds.urgency === 'IMMEDIATE' ? '#ef4444' : ds.urgency === 'HIGH' ? '#f97316' : ds.urgency === 'MEDIUM' ? '#eab308' : '#22c55e'
+  return (
+    <div className="decision-card" style={{ marginTop: 10 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
+        <Lightbulb size={13} color="#fb923c" />
+        <span style={{ fontSize: 11, fontWeight: 700, color: '#fb923c', letterSpacing: '0.07em', textTransform: 'uppercase' }}>Clinical Decision Support</span>
+        <span className="badge" style={{ background: `rgba(${ds.urgency === 'IMMEDIATE' ? '239,68,68' : '249,115,22'},0.15)`, color: urgencyColor, border: `1px solid rgba(${ds.urgency === 'IMMEDIATE' ? '239,68,68' : '249,115,22'},0.3)`, marginLeft: 'auto', fontSize: 9 }}>
+          {ds.urgency} URGENCY
+        </span>
+      </div>
+      <div style={{ marginBottom: 8 }}>
+        {ds.recommended_actions?.map((action, i) => (
+          <div key={i} className="decision-action">
+            <div className="action-num">{i + 1}</div>
+            <div style={{ flex: 1, lineHeight: 1.5 }}>{action}</div>
+          </div>
+        ))}
+      </div>
+      {ds.alternatives_note && (
+        <div style={{ fontSize: 11, color: '#8ba3c7', padding: '6px 10px', background: 'rgba(59,130,246,0.06)', borderRadius: 6, marginBottom: 6 }}>
+          <ClipboardList size={10} style={{ display: 'inline', marginRight: 5 }} />{ds.alternatives_note}
+        </div>
+      )}
+      {ds.icd10_reference && ds.icd10_reference !== '—' && (
+        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>📋 {ds.icd10_reference}</div>
+      )}
+    </div>
+  )
+}
+
 function ContraCard({ c, index }) {
   const [open, setOpen] = useState(false)
+  const [dsOpen, setDsOpen] = useState(false)
   const sev = c.severity?.toLowerCase()
+
+  // Build local decision support if not provided by API
+  const DS_LOCAL = {
+    ALLERGY_MEDICATION: { urgency: 'IMMEDIATE', recommended_actions: ['Discontinue prescribed medication immediately.', 'Notify prescribing physician of documented allergy.', 'Monitor patient for allergic reactions.'], alternatives_note: 'Choose an unrelated antibiotic class (e.g. macrolides).', icd10_reference: 'Z88 — Allergy status to drugs' },
+    CROSS_REACTIVITY:   { urgency: 'HIGH', recommended_actions: ['Review cross-reactivity between allergen and drug.', 'Consult allergist before continuing therapy.'], alternatives_note: 'Choose structurally unrelated drug class.', icd10_reference: 'T78.1 — Cross-reactivity concern' },
+    CONTRAINDICATION:   { urgency: 'HIGH', recommended_actions: ['Verify contraindication against patient diagnosis.', 'Review organ function labs.', 'Consider dose adjustment or substitution.'], alternatives_note: 'Consult pharmacist for alternatives.', icd10_reference: 'Z79 — Long-term drug therapy — requires monitoring' },
+    DIAGNOSIS_DISCREPANCY: { urgency: 'MEDIUM', recommended_actions: ['Reconcile contradictory diagnoses.', 'Clarify with documenting clinician.', 'Update active problem list.'], alternatives_note: 'Ensure unified diagnosis before treatment.', icd10_reference: 'Z03 — Observation for suspected conditions' },
+    CRITICAL_LAB:       { urgency: 'IMMEDIATE', recommended_actions: ['Notify treating clinician immediately.', 'Repeat lab to confirm result.', 'Assess patient clinically.'], alternatives_note: 'Initiate treatment per clinical guideline.', icd10_reference: 'R00-R99 — Symptoms requiring clinical correlation' },
+    LAB_DIAGNOSIS_MISMATCH: { urgency: 'MEDIUM', recommended_actions: ['Correlate abnormal lab with clinical presentation.', 'Consider undiagnosed condition.', 'Order follow-up tests.'], alternatives_note: 'Lab-clinical correlation essential.', icd10_reference: 'R73 — Elevated blood glucose' },
+  }
+  const ds = c.decision_support || DS_LOCAL[c.type] || null
 
   return (
     <div className="glass-card animate-slide-in" style={{
@@ -52,7 +97,6 @@ function ContraCard({ c, index }) {
       borderColor: `rgba(${sev === 'critical' ? '239,68,68' : sev === 'high' ? '249,115,22' : sev === 'medium' ? '234,179,8' : '34,197,94'}, 0.25)`
     }}>
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-        {/* Severity icon */}
         <div style={{
           width: 40, height: 40, borderRadius: 10, flexShrink: 0,
           background: `rgba(${sev === 'critical' ? '239,68,68' : sev === 'high' ? '249,115,22' : '234,179,8'}, 0.12)`,
@@ -65,45 +109,52 @@ function ContraCard({ c, index }) {
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 6, alignItems: 'center' }}>
             <span className={`badge badge-${sev}`}>{c.severity}</span>
             <span className="badge badge-blue">{c.type?.replace(/_/g, ' ')}</span>
-            {c.cross_document && <span className="badge" style={{ background: 'rgba(139,92,246,0.15)', color: '#a78bfa', border: '1px solid rgba(139,92,246,0.3)' }}>CROSS-DOC</span>}
-            <span style={{ marginLeft: 'auto', fontSize: 11, color: '#4a6285' }}>
+            {c.cross_document && <span className="badge badge-purple">CROSS-DOC</span>}
+            <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-muted)' }}>
               {Math.round((c.confidence || 0) * 100)}% confidence
             </span>
           </div>
 
-          <div style={{ fontSize: 14, color: '#cbd5e1', lineHeight: 1.5, marginBottom: 8 }}>{c.description}</div>
+          <div style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 8 }}>{c.description}</div>
 
-          {/* Source docs */}
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
-            {c.doc_a && <div style={{ fontSize: 11, color: '#4a6285', display: 'flex', gap: 4, alignItems: 'center' }}>
-              📄 {c.source_doc || c.doc_a}
-            </div>}
-            {c.doc_b && <div style={{ fontSize: 11, color: '#4a6285', display: 'flex', gap: 4, alignItems: 'center' }}>
-              📄 {c.doc_b}
-            </div>}
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
+            {c.doc_a && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>📄 {c.source_doc || c.doc_a}</div>}
+            {c.doc_b && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>📄 {c.doc_b}</div>}
           </div>
 
-          {/* Reasoning trace toggle */}
-          {c.reasoning_trace?.length > 0 && (
-            <div>
+          {/* Action buttons */}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {c.reasoning_trace?.length > 0 && (
               <button onClick={() => setOpen(o => !o)} className="btn-secondary"
                 style={{ fontSize: 11, padding: '4px 10px', gap: 4 }}>
                 {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                {open ? 'Hide' : 'Show'} Reasoning Trace
+                {open ? 'Hide' : 'Show'} Reasoning
               </button>
-              {open && (
-                <div className="glass-card animate-fade-in" style={{ padding: 14, marginTop: 10, borderColor: 'rgba(59,130,246,0.12)' }}>
-                  <div style={{ fontSize: 11, color: '#4a6285', fontWeight: 600, marginBottom: 8, letterSpacing: '0.06em' }}>EXPLAINABLE AI REASONING</div>
-                  {c.reasoning_trace.map((step, i) => (
-                    <div key={i} className="trace-step">
-                      <div className="trace-number">{i + 1}</div>
-                      <div style={{ flex: 1, lineHeight: 1.5 }}>{step.replace(/Step \d+:\s*/, '')}</div>
-                    </div>
-                  ))}
+            )}
+            {ds && (
+              <button onClick={() => setDsOpen(o => !o)} className="btn-secondary"
+                style={{ fontSize: 11, padding: '4px 10px', gap: 4, borderColor: 'rgba(249,115,22,0.3)', color: '#fb923c', background: 'rgba(249,115,22,0.07)' }}>
+                <Lightbulb size={11} />
+                {dsOpen ? 'Hide' : 'Show'} Decision Support
+              </button>
+            )}
+          </div>
+
+          {/* Reasoning trace */}
+          {open && c.reasoning_trace?.length > 0 && (
+            <div className="glass-card animate-fade-in" style={{ padding: 14, marginTop: 10, borderColor: 'rgba(59,130,246,0.12)' }}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, marginBottom: 8, letterSpacing: '0.06em' }}>EXPLAINABLE AI REASONING</div>
+              {c.reasoning_trace.map((step, i) => (
+                <div key={i} className="trace-step">
+                  <div className="trace-number">{i + 1}</div>
+                  <div style={{ flex: 1, lineHeight: 1.5 }}>{step.replace(/Step \d+:\s*/, '')}</div>
                 </div>
-              )}
+              ))}
             </div>
           )}
+
+          {/* Decision Support */}
+          {dsOpen && <DecisionSupportPanel ds={ds} />}
         </div>
       </div>
     </div>
